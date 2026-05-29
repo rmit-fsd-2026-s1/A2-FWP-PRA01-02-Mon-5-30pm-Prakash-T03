@@ -65,7 +65,7 @@ export default function Footer() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
               <span className="icon-text">
                 <span className="material-icons" style={{ fontSize: '1rem', color: 'var(--olive)' }}>place</span>
-                 445 Swanston Street, Melbourne, VIC 3000
+                 520 Victoria Street, Melbourne, VIC 3000
               </span>
               <span className="icon-text">
                 <span className="material-icons" style={{ fontSize: '1rem', color: 'var(--olive)' }}>email</span>
@@ -73,7 +73,7 @@ export default function Footer() {
               </span>
               <span className="icon-text">
                 <span className="material-icons" style={{ fontSize: '1rem', color: 'var(--olive)' }}>phone</span>
-                +61 3 9000 1234
+                +61 3 9256 1234
               </span>
             </div>
           </div>
@@ -91,7 +91,7 @@ export default function Footer() {
           }}
         >
           <span>© {new Date().getFullYear()} Venue Vendors Pty Ltd. All rights reserved.</span>
-          <span>ABN 55 123 456 789 · Melbourne, Australia</span>
+          <span>ABN 55 963 456 986 · Melbourne, Australia</span>
         </div>
       </div>
     </footer>
