@@ -43,6 +43,7 @@ const dotenv = __importStar(require("dotenv"));
 const path = __importStar(require("path"));
 const data_source_1 = require("./data-source");
 const create_db_1 = require("./create-db");
+const auth_1 = __importDefault(require("./routes/auth"));
 // Load environment variables from .env
 dotenv.config({ path: path.join(__dirname, "../.env") });
 const app = (0, express_1.default)();
@@ -50,6 +51,8 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use((0, cors_1.default)());
 app.use(express_1.default.json({ limit: "50mb" })); // Support large base64 file uploads for documents
+// Routes
+app.use("/api/auth", auth_1.default);
 // Simple Health Check Endpoint
 app.get("/api/health", (_req, res) => {
     res.json({

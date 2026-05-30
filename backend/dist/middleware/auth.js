@@ -33,29 +33,36 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AppDataSource = void 0;
-require("reflect-metadata");
-const typeorm_1 = require("typeorm");
-const dotenv = __importStar(require("dotenv"));
-const path = __importStar(require("path"));
-// Load environment variables from .env
-dotenv.config({ path: path.join(__dirname, "../.env") });
-const User_1 = require("./entity/User");
-const Venue_1 = require("./entity/Venue");
-const Application_1 = require("./entity/Application");
-const HireHistory_1 = require("./entity/HireHistory");
-const HirerDocument_1 = require("./entity/HirerDocument");
-const VendorComment_1 = require("./entity/VendorComment");
-exports.AppDataSource = new typeorm_1.DataSource({
-    type: "mysql",
-    host: process.env.DB_HOST || "localhost",
-    port: parseInt(process.env.DB_PORT || "3306", 10),
-    username: process.env.DB_USER || "root",
-    password: process.env.DB_PASSWORD || "root",
-    database: process.env.DB_NAME || "venue_vendors",
-    synchronize: true, // Auto-creates table structure on sync (good for college projects)
-    logging: false,
-    entities: [User_1.User, Venue_1.Venue, Application_1.Application, HireHistory_1.HireHistory, HirerDocument_1.HirerDocument, VendorComment_1.VendorComment],
-    migrations: [],
-    subscribers: [],
-});
+exports.authenticateToken = authenticateToken;
+exports.requireRole = requireRole;
+const jwt = __importStar(require("jsonwebtoken"));
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+    if (!token) {
+        res.status(401).json({ message: "Access token is missing. Please sign in." });
+        return;
+    }
+    const secret = process.env.JWT_SECRET || "super_secret_venueflow_token_key_123!";
+    jwt.verify(token, secret, (err, decoded) => {
+        if (err) {
+            res.status(403).json({ message: "Invalid or expired access token. Please sign in again." });
+            return;
+        }
+        req.user = decoded;
+        next();
+    });
+}
+function requireRole(role) {
+    return (req, res, next) => {
+        if (!req.user) {
+            res.status(401).json({ message: "Unauthorized. Please authenticate first." });
+            return;
+        }
+        if (req.user.role !== role) {
+            res.status(403).json({ message: `Forbidden. This feature is restricted to ${role}s.` });
+            return;
+        }
+        next();
+    };
+}

@@ -50,12 +50,12 @@ async function seed() {
     await data_source_1.AppDataSource.initialize();
     console.log("Database connected successfully. Wiping existing data...");
     // Wipe data in reverse dependency order to prevent foreign key errors
-    await data_source_1.AppDataSource.getRepository(VendorComment_1.VendorComment).delete({});
-    await data_source_1.AppDataSource.getRepository(HireHistory_1.HireHistory).delete({});
-    await data_source_1.AppDataSource.getRepository(Application_1.Application).delete({});
-    await data_source_1.AppDataSource.getRepository(HirerDocument_1.HirerDocument).delete({});
-    await data_source_1.AppDataSource.getRepository(Venue_1.Venue).delete({});
-    await data_source_1.AppDataSource.getRepository(User_1.User).delete({});
+    // await AppDataSource.getRepository(VendorComment).clear();
+    // await AppDataSource.getRepository(HireHistory).clear();
+    // await AppDataSource.getRepository(Application).clear();
+    // await AppDataSource.getRepository(HirerDocument).clear();
+    // await AppDataSource.getRepository(Venue).clear();
+    // await AppDataSource.getRepository(User).clear();
     console.log("Data wiped. Starting seeding process...");
     // 1. Create Users
     const hashedPassword = bcrypt.hashSync("Password1!", 10);

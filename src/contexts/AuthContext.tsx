@@ -1,51 +1,130 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { User } from '../types';
-import {
-  getCurrentUser, setCurrentUserId, clearCurrentUser, getUserByEmail
-} from '../utils/storage';
+import type { User, UserRole } from '../types';
 
-
-// Handles authentication of users so any component can access the current one
-// Reads stored UserID from localStorage and loads the full object 'user'
-// Refreshing the page will therefore not logout the user.
 interface AuthContextType {
   currentUser: User | null;
-  login: (email: string, password: string) => { success: boolean; message: string };
+  login: (email: string, password: string) => Promise<{ success: boolean; message: string; user?: User }>;
+  signup: (
+    email: string,
+    password: string,
+    name: string,
+    phone: string,
+    role: UserRole
+  ) => Promise<{ success: boolean; message: string; user?: User; errors?: any }>;
   logout: () => void;
-  refreshUser: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const API_BASE = 'http://localhost:5000/api';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const refreshUser = useCallback(() => {
-    setCurrentUser(getCurrentUser());
+  const refreshUser = useCallback(async () => {
+    const token = localStorage.getItem('vv_token');
+    if (!token) {
+      setCurrentUser(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/auth/profile`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentUser(data.user);
+      } else {
+        // Token might have expired or be invalid
+        localStorage.removeItem('vv_token');
+        setCurrentUser(null);
+      }
+    } catch (err) {
+      console.error('Error fetching user profile:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     refreshUser();
   }, [refreshUser]);
 
-  const login = (email: string, password: string): { success: boolean; message: string } => {
-    const user = getUserByEmail(email);
-    if (!user) return { success: false, message: 'No account found with this email address.' };
-    if (user.password !== password)
-      return { success: false, message: 'Incorrect password. Please try again.' };
-    setCurrentUserId(user.id);
-    setCurrentUser(user);
-    return { success: true, message: `Welcome back, ${user.name}!` };
+  const login = async (email: string, password: string): Promise<{ success: boolean; message: string; user?: User }> => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/signin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        return { success: false, message: data.message || 'Signin failed.' };
+      }
+
+      localStorage.setItem('vv_token', data.token);
+      setCurrentUser(data.user);
+      return { success: true, message: data.message, user: data.user };
+    } catch (err) {
+      console.error('Login error:', err);
+      return { success: false, message: 'Could not connect to the authentication server.' };
+    }
+  };
+
+  const signup = async (
+    email: string,
+    password: string,
+    name: string,
+    phone: string,
+    role: UserRole
+  ): Promise<{ success: boolean; message: string; user?: User; errors?: any }> => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password, name, phone, role }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        return {
+          success: false,
+          message: data.message || 'Registration failed.',
+          errors: data.errors,
+        };
+      }
+
+      localStorage.setItem('vv_token', data.token);
+      setCurrentUser(data.user);
+      return { success: true, message: data.message, user: data.user };
+    } catch (err) {
+      console.error('Signup error:', err);
+      return { success: false, message: 'Could not connect to the authentication server.' };
+    }
   };
 
   const logout = () => {
-    clearCurrentUser();
+    localStorage.removeItem('vv_token');
     setCurrentUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, login, logout, refreshUser }}>
-      {children}
+    <AuthContext.Provider value={{ currentUser, login, signup, logout, refreshUser }}>
+      {!loading && children}
     </AuthContext.Provider>
   );
 };

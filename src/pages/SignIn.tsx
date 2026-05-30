@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import Navbar from '../components/layout/Navbar'
 import { useAuth } from '../contexts/AuthContext'
 import { validateEmail, validatePassword } from '../utils/validation'
-import { getCurrentUser } from '../utils/storage'
 
 type FormErrors = {
   email?: string
@@ -59,7 +58,7 @@ export default function SignIn() {
     setErrors(prev => ({ ...prev, captcha: undefined }))
   }
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     if (!validateForm()) {
@@ -67,9 +66,9 @@ export default function SignIn() {
       return
     }
 
-    const result = login(email, password)
+    const result = await login(email, password)
 
-    if (!result.success) {
+    if (!result.success || !result.user) {
       setMessage({ type: 'error', text: result.message })
       refreshCaptcha()
       return
@@ -77,9 +76,10 @@ export default function SignIn() {
 
     setMessage({ type: 'success', text: result.message })
 
+    const userRole = result.user.role
+
     setTimeout(() => {
-      const user = getCurrentUser()
-      navigate(user?.role === 'vendor' ? '/vendor' : '/hirer')
+      navigate(userRole === 'vendor' ? '/vendor' : '/hirer')
     }, 700)
   }
 
