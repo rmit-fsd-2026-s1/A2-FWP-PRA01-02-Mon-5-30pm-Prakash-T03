@@ -1,10 +1,37 @@
+import { useState, useEffect } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { useVendorAnalytics } from '../../hooks/useVendorAnalytics'
+import { api } from '../../utils/api'
 
 export default function VendorAnalytics() {
+  const [data, setData] = useState<{
+    analyticsData: any[];
+    mostSelectedApplicants: any[];
+    leastSelectedApplicants: any[];
+    neverSelectedApplicants: any[];
+    chartColours: string[];
+    pieChartData: any[];
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.getVendorAnalytics()
+      .then(res => {
+        setData(res);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading || !data) {
+    return <p className="text-center text-muted" style={{ padding: '3rem' }}>Loading analytics stats...</p>;
+  }
+
   const {
     analyticsData,
     mostSelectedApplicants,
@@ -12,7 +39,7 @@ export default function VendorAnalytics() {
     neverSelectedApplicants,
     chartColours,
     pieChartData,
-  } = useVendorAnalytics()
+  } = data;
 
   return (
     <div>

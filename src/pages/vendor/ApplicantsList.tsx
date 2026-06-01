@@ -1,86 +1,63 @@
-import { useState, useMemo } from 'react'
-import { useAuth } from '../../contexts/AuthContext'
-import {
-  getApplications, updateApplication, addVendorComment, getVendorComments,
-  getHireHistoryByHirer, getDocumentsByHirer, getHirerReputation,
-  addHireHistory, uid
-} from '../../utils/storage'
-import type { Application } from '../../types'
+import { useState, useMemo, useEffect } from 'react'
+import { api } from '../../utils/api'
+import type { Application, HirerDocuments } from '../../types'
 import StarRating from '../../components/StarRating'
 
 export default function ApplicantsList() {
-  const { currentUser } = useAuth()
-  const [apps, setApps]         = useState(() => getApplications())
-  const [sortBy, setSortBy]     = useState<'date' | 'reputation'>('date')
+  const [apps, setApps]         = useState<Application[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
   const [comment, setComment]   = useState<Record<string, string>>({})
   const [rating, setRating]     = useState<Record<string, number>>({})
   const [saved, setSaved]       = useState<Record<string, boolean>>({})
+  const [loading, setLoading]   = useState(true)
 
-  const refreshApps = () => setApps(getApplications())
+  const refreshApps = () => {
+    api.getApplications()
+      .then(setApps)
+      .then(() => setLoading(false))
+      .catch(err => {
+        console.error(err)
+        setLoading(false)
+      })
+  }
+
+  useEffect(() => {
+    refreshApps()
+  }, [])
 
   const sorted = useMemo(() => {
     const list = [...apps]
-    if (sortBy === 'reputation') {
-      return list.sort((a, b) => getHirerReputation(b.hirerId) - getHirerReputation(a.hirerId))
-    }
+    // Default: Sort by date descending
     return list.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
-  }, [apps, sortBy])
+  }, [apps])
 
-  // When a vendor approves, we together:
-  // Update the application status to 'approved'
-  // Write a new hire history entry (used for scoring of reputation)
-  // Save any vendor comment to the comments store
-  const handleApprove = (app: Application) => {
+  const handleApprove = async (app: Application) => {
     const r = rating[app.id] ?? 0
-    if (!r) { alert('Please set a rating (1–5 stars) before approving.'); return }
-    const updated: Application = {
-      ...app,
-      status: 'approved',
-      vendorComment: comment[app.id] || '',
-      approvedAt: new Date().toISOString(),
+    if (!r) { alert('Please select a star rating to evaluate this applicant.'); return }
+    
+    try {
+      await api.updateApplicationStatus(app.id, 'approved', comment[app.id] || '')
+      refreshApps()
+      setSaved(p => ({ ...p, [app.id]: true }))
+      setTimeout(() => setSaved(p => ({ ...p, [app.id]: false })), 3000)
+    } catch (err) {
+      console.error(err)
+      alert('Failed to approve application.')
     }
-    updateApplication(updated)
-    addHireHistory({
-      id: uid(),
-      hirerId: app.hirerId,
-      hirerName: app.hirerName,
-      vendorId: currentUser!.id,
-      venueId: app.venueId,
-      venueName: app.venueName,
-      venueLocation: app.venueLocation,
-      eventName: app.eventName,
-      dateOfHire: app.eventDate,
-      rating: r,
-    })
-    if (comment[app.id]?.trim()) {
-      addVendorComment({
-        id: uid(),
-        vendorId: currentUser!.id,
-        hirerId: app.hirerId,
-        applicationId: app.id,
-        comment: comment[app.id].trim(),
-        createdAt: new Date().toISOString(),
-      })
-    }
-    refreshApps()
-    setSaved(p => ({ ...p, [app.id]: true }))
-    setTimeout(() => setSaved(p => ({ ...p, [app.id]: false })), 3000)
   }
 
-  const handleReject = (app: Application) => {
-    updateApplication({ ...app, status: 'rejected', vendorComment: comment[app.id] || '' })
-    if (comment[app.id]?.trim()) {
-      addVendorComment({
-        id: uid(),
-        vendorId: currentUser!.id,
-        hirerId: app.hirerId,
-        applicationId: app.id,
-        comment: comment[app.id].trim(),
-        createdAt: new Date().toISOString(),
-      })
+  const handleReject = async (app: Application) => {
+    try {
+      await api.updateApplicationStatus(app.id, 'rejected', comment[app.id] || '')
+      refreshApps()
+    } catch (err) {
+      console.error(err)
+      alert('Failed to reject application.')
     }
-    refreshApps()
+  }
+
+  if (loading) {
+    return <p className="text-center text-muted" style={{ padding: '3rem' }}>Loading applications list...</p>
   }
 
   return (
@@ -89,18 +66,6 @@ export default function ApplicantsList() {
         <div>
           <h2 style={{ marginBottom: '0.15rem' }}>Applicants</h2>
           <p>Review and manage hiring applications for your venues.</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <label className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>Sort by:</label>
-          <select
-            className="form-select"
-            style={{ width: 'auto' }}
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value as 'date' | 'reputation')}
-          >
-            <option value="date">Submission Date</option>
-            <option value="reputation">Reputation Score ↓</option>
-          </select>
         </div>
       </div>
 
@@ -152,11 +117,40 @@ function ApplicantCard({
   app, expanded, onToggle, comment, onCommentChange,
   rating, onRatingChange, onApprove, onReject, saved,
 }: CardProps) {
-  const reputation = getHirerReputation(app.hirerId)
-  const hireHistory = getHireHistoryByHirer(app.hirerId)
-  const docs = getDocumentsByHirer(app.hirerId)
-  const vendorComments = getVendorComments().filter(c => c.hirerId === app.hirerId)
   const isPending = app.status === 'pending'
+
+  // Dynamic Details State populated when card is expanded
+  const [details, setDetails] = useState<{
+    reputation: number;
+    history: any[];
+    documents: HirerDocuments | null;
+    loading: boolean;
+  }>({
+    reputation: 0,
+    history: [],
+    documents: null,
+    loading: true,
+  });
+
+  useEffect(() => {
+    if (expanded) {
+      setDetails(prev => ({ ...prev, loading: true }));
+      Promise.all([
+        api.getHistoryByHirer(app.hirerId),
+        api.getDocumentsByHirerId(app.hirerId)
+      ]).then(([historyRes, docsRes]) => {
+        setDetails({
+          reputation: historyRes.reputation,
+          history: historyRes.history,
+          documents: docsRes,
+          loading: false,
+        });
+      }).catch(err => {
+        console.error('Error fetching hirer trust details:', err);
+        setDetails(prev => ({ ...prev, loading: false }));
+      });
+    }
+  }, [expanded, app.hirerId]);
 
   return (
     <div className="card" style={{ borderLeft: `4px solid ${app.status === 'approved' ? 'var(--success)' : app.status === 'rejected' ? 'var(--error)' : 'var(--olive)'}` }}>
@@ -183,13 +177,6 @@ function ApplicantCard({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Reputation</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <StarRating value={Math.round(reputation)} readOnly size="sm" />
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--charcoal)' }}>{reputation.toFixed(1)}</span>
-            </div>
-          </div>
           <span className="material-icons" style={{ color: 'var(--text-muted)' }}>
             {expanded ? 'expand_less' : 'expand_more'}
           </span>
@@ -206,75 +193,61 @@ function ApplicantCard({
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-            {/* Hire history */}
-            <div>
-              <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
-                <span className="material-icons" style={{ verticalAlign: 'middle', marginRight: 4, fontSize: '1.1rem' }}>history</span>
-                Hire History ({hireHistory.length} records)
-              </h4>
-              {hireHistory.length === 0 ? (
-                <p className="text-muted">No previous hires on record.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {hireHistory.map(h => (
-                    <div key={h.id} style={{ background: 'var(--bg-subtle)', borderRadius: 'var(--r)', padding: '0.6rem 0.75rem', fontSize: '0.85rem' }}>
-                      <div style={{ fontWeight: 600 }}>{h.venueName}</div>
-                      <div style={{ color: 'var(--text-muted)' }}>{h.eventName} · {new Date(h.dateOfHire).toLocaleDateString('en-AU')}</div>
-                      <StarRating value={h.rating} readOnly size="sm" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Documents */}
-            <div>
-              <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
-                <span className="material-icons" style={{ verticalAlign: 'middle', marginRight: 4, fontSize: '1.1rem' }}>folder_open</span>
-                Compliance Documents
-              </h4>
-              {!docs ? (
-                <p className="text-muted">No documents submitted.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <DocRow label="Driver's License" name={docs.driverLicenseName} />
-                  <DocRow label="Public Liability" name={docs.publicLiabilityName} />
-                  {docs.isBusinessApplicant && (
-                    <>
-                      <DocRow label="Business Certificate" name={docs.businessCertName} />
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
-                        ABN: {docs.abn || '—'}
+          {details.loading ? (
+            <p className="text-center text-muted" style={{ padding: '1rem' }}>Loading applicant reputation and compliance data...</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+              {/* Hire history */}
+              <div>
+                <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
+                  <span className="material-icons" style={{ verticalAlign: 'middle', marginRight: 4, fontSize: '1.1rem' }}>history</span>
+                  Hire History ({details.history.length} records)
+                </h4>
+                {details.history.length === 0 ? (
+                  <p className="text-muted">No previous hires on record.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {details.history.map(h => (
+                      <div key={h.id} style={{ background: 'var(--bg-subtle)', borderRadius: 'var(--r)', padding: '0.6rem 0.75rem', fontSize: '0.85rem' }}>
+                        <div style={{ fontWeight: 600 }}>{h.venueName}</div>
+                        <div style={{ color: 'var(--text-muted)' }}>{h.eventName} · {new Date(h.dateOfHire).toLocaleDateString('en-AU')}</div>
+                        <StarRating value={h.rating} readOnly size="sm" />
                       </div>
-                    </>
-                  )}
-                  <div style={{ marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Credibility:</span>
-                    <StarRating value={Math.round(docs.credibilityScore)} readOnly size="sm" />
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{docs.credibilityScore.toFixed(1)}/5</span>
+                    ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
-              {/* Vendor comments */}
-              {vendorComments.length > 0 && (
-                <div style={{ marginTop: '1rem' }}>
-                  <h4 style={{ marginBottom: '0.5rem', fontSize: '0.95rem' }}>
-                    <span className="material-icons" style={{ verticalAlign: 'middle', marginRight: 4, fontSize: '1.1rem' }}>comment</span>
-                    Past Vendor Comments
-                  </h4>
-                  {vendorComments.map(vc => (
-                    <div key={vc.id} style={{ background: 'var(--info-bg)', borderRadius: 'var(--r)', padding: '0.6rem 0.75rem', fontSize: '0.85rem', marginBottom: '0.5rem', borderLeft: '3px solid #3b82f6' }}>
-                      <p style={{ margin: 0, color: 'var(--text)' }}>{vc.comment}</p>
-                      <p style={{ margin: '0.2rem 0 0', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        {new Date(vc.createdAt).toLocaleDateString('en-AU')}
-                      </p>
+              {/* Documents */}
+              <div>
+                <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
+                  <span className="material-icons" style={{ verticalAlign: 'middle', marginRight: 4, fontSize: '1.1rem' }}>folder_open</span>
+                  Compliance Documents
+                </h4>
+                {!details.documents ? (
+                  <p className="text-muted">No documents submitted.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <DocRow label="Driver's License" name={details.documents.driverLicenseName} />
+                    <DocRow label="Public Liability" name={details.documents.publicLiabilityName} />
+                    {details.documents.isBusinessApplicant && (
+                      <>
+                        <DocRow label="Business Certificate" name={details.documents.businessCertName} />
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
+                          ABN: {details.documents.abn || '—'}
+                        </div>
+                      </>
+                    )}
+                    <div style={{ marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Credibility:</span>
+                      <StarRating value={Math.round(details.documents.credibilityScore)} readOnly size="sm" />
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{details.documents.credibilityScore.toFixed(1)}/5</span>
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Vendor actions */}
           {isPending && (
@@ -282,7 +255,7 @@ function ApplicantCard({
               <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>Vendor Decision</h4>
 
               <div className="form-group">
-                <label className="form-label">Rate this applicant (required for approval)</label>
+                <label className="form-label">Evaluate this applicant (give a trust rating out of 5 stars)</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <StarRating value={rating} onChange={onRatingChange} size="lg" />
                   {rating > 0 && <span style={{ fontWeight: 600, color: 'var(--charcoal)' }}>{rating}/5</span>}

@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { getVenues } from '../../utils/storage'
+import { useState, useMemo, useEffect } from 'react'
+import { api } from '../../utils/api'
 import type { Venue } from '../../types'
 
 interface Props {
@@ -14,13 +14,16 @@ const ALL_SUITABILITIES = [
 ]
 
 export default function BrowseVenues({ onApply }: Props) {
+  const [venues, setVenues] = useState<Venue[]>([])
   const [search, setSearch]     = useState('')
   const [locFilter, setLoc]     = useState('')
   const [capFilter, setCap]     = useState('')
   const [suitFilter, setSuit]   = useState('')
   const [selected, setSelected] = useState<Venue | null>(null)
 
-  const venues = getVenues()
+  useEffect(() => {
+    api.getVenues().then(setVenues).catch(console.error)
+  }, [])
 
   const filtered = useMemo(() => {
     return venues.filter(v => {

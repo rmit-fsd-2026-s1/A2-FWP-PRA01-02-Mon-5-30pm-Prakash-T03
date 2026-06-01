@@ -1,27 +1,49 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
-import {
-  getDocumentsByHirer, saveDocumentsForHirer, calcCredibilityScore
-} from '../../utils/storage'
+import { api } from '../../utils/api'
+import { calcCredibilityScore } from '../../utils/storage'
 import type { HirerDocuments } from '../../types'
 import StarRating from '../../components/StarRating'
 import { validateABN } from '../../utils/validation'
 
 export default function HirerDocumentsPage() {
   const { currentUser } = useAuth()
-  const existing = currentUser ? getDocumentsByHirer(currentUser.id) : undefined
 
-  const [isBusiness, setIsBusiness]       = useState(existing?.isBusinessApplicant ?? false)
-  const [abn, setAbn]                     = useState(existing?.abn ?? '')
-  const [licName, setLicName]             = useState(existing?.driverLicenseName ?? '')
-  const [licData, setLicData]             = useState(existing?.driverLicenseData ?? '')
-  const [liabName, setLiabName]           = useState(existing?.publicLiabilityName ?? '')
-  const [liabData, setLiabData]           = useState(existing?.publicLiabilityData ?? '')
-  const [certName, setCertName]           = useState(existing?.businessCertName ?? '')
-  const [certData, setCertData]           = useState(existing?.businessCertData ?? '')
-  const [credibility, setCredibility]     = useState(existing?.credibilityScore ?? 0)
+  const [isBusiness, setIsBusiness]       = useState(false)
+  const [abn, setAbn]                     = useState('')
+  const [licName, setLicName]             = useState('')
+  const [licData, setLicData]             = useState('')
+  const [liabName, setLiabName]           = useState('')
+  const [liabData, setLiabData]           = useState('')
+  const [certName, setCertName]           = useState('')
+  const [certData, setCertData]           = useState('')
+  const [credibility, setCredibility]     = useState(0)
   const [saved, setSaved]                 = useState(false)
   const [errors, setErrors]               = useState<Record<string, string>>({})
+  const [loading, setLoading]             = useState(true)
+
+  useEffect(() => {
+    if (!currentUser) return
+    api.getDocuments()
+      .then(doc => {
+        if (doc) {
+          setIsBusiness(doc.isBusinessApplicant ?? false)
+          setAbn(doc.abn ?? '')
+          setLicName(doc.driverLicenseName ?? '')
+          setLicData(doc.driverLicenseData ?? '')
+          setLiabName(doc.publicLiabilityName ?? '')
+          setLiabData(doc.publicLiabilityData ?? '')
+          setCertName(doc.businessCertName ?? '')
+          setCertData(doc.businessCertData ?? '')
+          setCredibility(doc.credibilityScore ?? 0)
+        }
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error('Error fetching documents:', err)
+        setLoading(false)
+      })
+  }, [currentUser])
 
   useEffect(() => {
     const score = calcCredibilityScore({
@@ -33,13 +55,6 @@ export default function HirerDocumentsPage() {
     setCredibility(score)
   }, [licData, liabData, certData, isBusiness])
 
-// Credibility score updates live as the user uploads documents
-// useEffect watches the three file data states and recalculates on every change
-// This gives instant visual feedback, the star rating updates without saving
-
-// Files are read as base64 strings using the FileReader API and stored in
-// localStorage. This is the only client side option without a backend.
-// Large PDFs however can approach localStorage's 5MB limit quickly which is limiting.
   const readFile = (
     file: File,
     accept: string[],
@@ -61,7 +76,7 @@ export default function HirerDocumentsPage() {
     reader.readAsDataURL(file)
   }
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     const errs: Record<string, string> = {}
     if (isBusiness) {
@@ -72,8 +87,7 @@ export default function HirerDocumentsPage() {
     if (Object.keys(errs).length > 0) return
 
     if (!currentUser) return
-    const doc: HirerDocuments = {
-      hirerId: currentUser.id,
+    const docPayload: Partial<HirerDocuments> = {
       isBusinessApplicant: isBusiness,
       abn: isBusiness ? abn : undefined,
       driverLicenseName: licName || undefined,
@@ -82,11 +96,21 @@ export default function HirerDocumentsPage() {
       publicLiabilityData: liabData || undefined,
       businessCertName: isBusiness ? certName || undefined : undefined,
       businessCertData: isBusiness ? certData || undefined : undefined,
-      credibilityScore: credibility,
     }
-    saveDocumentsForHirer(doc)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+
+    try {
+      const res = await api.saveDocuments(docPayload)
+      setCredibility(res.document.credibilityScore)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      console.error('Error saving documents:', err)
+      setErrors(p => ({ ...p, submit: 'Failed to save documents on server.' }))
+    }
+  }
+
+  if (loading) {
+    return <p className="text-center text-muted" style={{ padding: '3rem' }}>Loading compliance documents...</p>
   }
 
 

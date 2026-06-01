@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
-import { getVenues, addApplication, uid } from '../../utils/storage'
+import { api } from '../../utils/api'
+import type { Venue } from '../../types'
 import { validateRequired, validatePositiveNumber, validateDate } from '../../utils/validation'
 
 // Validation rules for hire application:
@@ -12,7 +13,13 @@ import { validateRequired, validatePositiveNumber, validateDate } from '../../ut
 
 export default function ApplyForVenue() {
   const { currentUser } = useAuth()
-  const venues = getVenues().filter(v => !v.isBlocked)
+  const [venues, setVenues] = useState<Venue[]>([])
+  
+  useEffect(() => {
+    api.getVenues()
+      .then(data => setVenues(data.filter(v => !v.isBlocked)))
+      .catch(console.error)
+  }, [])
 
   const [venueId, setVenueId]   = useState('')
   const [eventName, setEvent]   = useState('')
@@ -22,6 +29,7 @@ export default function ApplyForVenue() {
   const [duration, setDuration] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [errors, setErrors]     = useState<Record<string, string>>({})
+  const [errorMessage, setErrorMessage] = useState('')
 
   const selectedVenue = venues.find(v => v.id === venueId)
 
@@ -39,29 +47,25 @@ export default function ApplyForVenue() {
     return Object.keys(e).length === 0
   }
 
-  const handleSubmit = (ev: React.FormEvent) => {
+  const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault()
     if (!validate() || !currentUser || !selectedVenue) return
 
-    addApplication({
-      id: uid(),
-      hirerId: currentUser.id,
-      hirerName: currentUser.name,
-      hirerEmail: currentUser.email,
-      venueId: selectedVenue.id,
-      venueName: selectedVenue.name,
-      venueLocation: selectedVenue.location,
-      eventName: eventName.trim(),
-      guestCount: Number(guests),
-      eventDate: date,
-      eventTime: time,
-      durationHours: Number(duration),
-      status: 'pending',
-      vendorComment: '',
-      submittedAt: new Date().toISOString(),
-    })
-
-    setSubmitted(true)
+    try {
+      setErrorMessage('')
+      await api.submitApplication({
+        venueId: selectedVenue.id,
+        eventName: eventName.trim(),
+        guestCount: Number(guests),
+        eventDate: date,
+        eventTime: time,
+        durationHours: Number(duration),
+      })
+      setSubmitted(true)
+    } catch (err: any) {
+      console.error(err)
+      setErrorMessage(err.message || 'Failed to submit application. Please try again.')
+    }
   }
 
   const resetForm = () => {
@@ -262,6 +266,13 @@ export default function ApplyForVenue() {
               <strong>Estimated Cost:</strong> ${(selectedVenue.pricePerHour * Number(duration)).toLocaleString()}
               &nbsp;({Number(duration)} hrs × ${selectedVenue.pricePerHour}/hr)
             </div>
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="alert alert-error" style={{ marginBottom: '1.5rem' }}>
+            <span className="material-icons">error</span>
+            <div>{errorMessage}</div>
           </div>
         )}
 
