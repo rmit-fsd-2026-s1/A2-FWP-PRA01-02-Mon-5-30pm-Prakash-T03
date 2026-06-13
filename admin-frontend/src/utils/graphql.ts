@@ -9,7 +9,7 @@
  * - Preview production build: npm run preview
  */
 
-const GRAPHQL_URL = 'https://venue-vendors-admin-backend-api.onrender.com/graphql';
+const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_URL || 'http://localhost:5001/graphql';
 
 export async function graphqlFetch<T = any>(query: string, variables: any = {}): Promise<T> {
   const token = localStorage.getItem('admin_token');
