@@ -26,11 +26,11 @@ services:
         value: venue_vendors
 
   # 2. React TS Frontend Client (Static Site Hosting)
-  - type: static
+  - type: web
     name: venue-vendors-frontend-app
     rootDir: frontend
     buildCommand: npm install && npm run build
-    publishPath: dist
+    staticPublishPath: dist
     routes:
       # Redirect all frontend routing requests back to index.html for React Router
       - type: rewrite
@@ -64,11 +64,11 @@ services:
         value: venue_vendors
 
   # 4. React TS Admin Frontend Client (Static Site Hosting)
-  - type: static
+  - type: web
     name: venue-vendors-admin-frontend-app
     rootDir: admin-frontend
     buildCommand: npm install && npm run build
-    publishPath: dist
+    staticPublishPath: dist
     routes:
       # Redirect all admin routing requests back to index.html for React Router
       - type: rewrite
