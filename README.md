@@ -84,7 +84,7 @@ npm run dev
 ### 4. Admin GraphQL Server
 ```bash
 cd admin-backend
-npm install
+npm install --legacy-peer-deps
 npm run start
 ```
 
